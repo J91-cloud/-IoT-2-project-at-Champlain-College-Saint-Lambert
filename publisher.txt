@@ -1,0 +1,172 @@
+import time
+import json
+import board
+import adafruit_dht
+import paho.mqtt.client as mqtt
+from w1thermsensor import W1ThermSensor
+import RPi.GPIO as GPIO
+from datetime import datetime
+
+# Pin Configuration
+DHT_PIN = board.D4           # DHT22 sensor pin
+MOISTURE_PIN = 17            # Soil moisture sensor analog pin
+SOLENOID_PIN = 18           # Solenoid valve control pin
+
+# Threshold values
+MOISTURE_THRESHOLD = 50      # 0-100%, adjust based on your needs
+TEMP_MAX = 30               # Maximum temperature in Celsius
+HUMIDITY_MIN = 40           # Minimum humidity percentage
+
+# MQTT Configuration
+MQTT_BROKER = "YOUR_FLASK_SERVER_IP"
+MQTT_PORT = 1883
+MQTT_USER = ""              # If you set username in Flask
+MQTT_PASSWORD = ""          # If you set password in Flask
+
+class SensorController:
+    def __init__(self):
+        # Setup GPIO
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(SOLENOID_PIN, GPIO.OUT)
+        GPIO.output(SOLENOID_PIN, GPIO.LOW)  # Start with valve closed
+
+        # Initialize sensors
+        self.dht = adafruit_dht.DHT22(DHT_PIN)
+
+        # Initialize MQTT client
+        self.client = mqtt.Client()
+        self.client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+        self.client.on_connect = self.on_connect
+        self.client.on_disconnect = self.on_disconnect
+
+        # Sensor state
+        self.valve_state = False
+        self.last_publish = {}
+
+    def on_connect(self, client, userdata, flags, rc):
+        print(f"Connected to MQTT broker with code: {rc}")
+
+    def on_disconnect(self, client, userdata, rc):
+        print(f"Disconnected from MQTT broker with code: {rc}")
+        time.sleep(5)
+        self.connect_mqtt()
+
+    def connect_mqtt(self):
+        try:
+            self.client.connect(MQTT_BROKER, MQTT_PORT, 60)
+            self.client.loop_start()
+        except Exception as e:
+            print(f"Failed to connect to MQTT broker: {e}")
+
+    def read_moisture(self):
+
+        try:
+
+            moisture = GPIO.input(MOISTURE_PIN)
+            return moisture
+        except Exception as e:
+            print(f"Error reading moisture: {e}")
+            return None
+
+    def read_dht(self):
+        try:
+            temperature = self.dht.temperature
+            humidity = self.dht.humidity
+            return temperature, humidity
+        except Exception as e:
+            print(f"Error reading DHT: {e}")
+            return None, None
+
+    def control_valve(self, should_open):
+        """Control the solenoid valve"""
+        if should_open != self.valve_state:
+            GPIO.output(SOLENOID_PIN, GPIO.HIGH if should_open else GPIO.LOW)
+            self.valve_state = should_open
+            print(f"Valve {'opened' if should_open else 'closed'}")
+
+    def publish_reading(self, sensor_id, value):
+        """Publish sensor reading to MQTT"""
+        try:
+            # Only publish if value has changed or 5 seconds have passed
+            current_time = time.time()
+            if (sensor_id not in self.last_publish or
+                current_time - self.last_publish[sensor_id]['time'] > 5 or
+                abs(self.last_publish[sensor_id]['value'] - value) > 0.5):
+
+                payload = json.dumps({'value': value})
+                self.client.publish(f'sensors/{sensor_id}', payload)
+                self.last_publish[sensor_id] = {
+                    'time': current_time,
+                    'value': value
+                }
+        except Exception as e:
+            print(f"Error publishing to MQTT: {e}")
+
+    def run(self):
+        """Main control loop"""
+        self.connect_mqtt()
+
+        while True:
+            try:
+                # Read sensors
+                moisture = self.read_moisture()
+                temperature, humidity = self.read_dht()
+
+                # Publish readings if valid
+                if moisture is not None:
+                    self.publish_reading('sensor1', moisture)
+                if temperature is not None:
+                    self.publish_reading('sensor2', temperature)
+                if humidity is not None:
+                    self.publish_reading('sensor3', humidity)
+
+                # Control logic for valve
+                should_open = False
+
+                if all(x is not None for x in [moisture, temperature, humidity]):
+                    # Open valve if:
+                    # - Soil is too dry (moisture below threshold) AND
+                    # - Temperature is not too high AND
+                    # - Humidity is not too low
+                    if (moisture < MOISTURE_THRESHOLD and
+                        temperature < TEMP_MAX and
+                        humidity > HUMIDITY_MIN):
+                        should_open = True
+
+                    self.control_valve(should_open)
+
+                    # Log current state
+                    print(f"""
+Current Readings:
+  Moisture: {moisture:.1f}%
+  Temperature: {temperature:.1f}°C
+  Humidity: {humidity:.1f}%
+  Valve: {'Open' if self.valve_state else 'Closed'}
+                    """)
+
+                time.sleep(2)  # Delay between readings
+
+            except Exception as e:
+                print(f"Error in main loop: {e}")
+                time.sleep(5)  # Wait before retrying
+
+    def cleanup(self):
+        """Cleanup GPIO and MQTT connection"""
+        try:
+            self.control_valve(False)  # Close valve
+            GPIO.cleanup()
+            self.client.loop_stop()
+            self.client.disconnect()
+        except:
+            pass
+
+if __name__ == "__main__":
+    controller = None
+    try:
+        controller = SensorController()
+        controller.run()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        if controller:
+            controller.cleanup()

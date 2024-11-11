@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav>
+        <ul>
+            <li><a href="{{ url_for('main_controller.home_func') }}">Home</a></li>
+            <li><a href="{{ url_for('main_controller.live_func') }}">Live Charts</a></li>
+            <li><a href="{{ url_for('main_controller.historical_func') }}">Historical Charts</a></li>
+        </ul>
+    </nav>
+
+    <h1>Historical Data for all your Sensors</h1>
+
+    <h2>Humidity Sensor</h2>
+    <canvas id="humidityHistoricalChart"></canvas>
+
+    <h2>Temperature Sensor</h2>
+    <canvas id="temperatureHistoricalChart"></canvas>
+
+    <h2>Moisture Sensor</h2>
+    <canvas id="moistureHistoricalChart"></canvas>
+
+    <script>
+        // Data passed from Flask to JavaScript
+        var humidityData = {{ humidity_data | tojson }};
+        var temperatureData = {{ temperature_data | tojson }};
+        var moistureData = {{ moisture_data | tojson }};
+
+        // Extract values and timestamps from the data for the charts
+        var humidityValues = humidityData.map(function(d) { return d.value; });
+        var humidityTimestamps = humidityData.map(function(d) { return d.timestamp; });
+
+        var temperatureValues = temperatureData.map(function(d) { return d.value; });
+        var temperatureTimestamps = temperatureData.map(function(d) { return d.timestamp; });
+
+        var moistureValues = moistureData.map(function(d) { return d.value; });
+        var moistureTimestamps = moistureData.map(function(d) { return d.timestamp; });
+
+        // Create charts for each sensor
+        var ctx1 = document.getElementById('humidityHistoricalChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'line',
+            data: {
+                labels: humidityTimestamps,
+                datasets: [{
+                    label: 'Humidity',
+                    data: humidityValues,
+                    borderColor: 'blue',
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            tooltipFormat: 'll',
+                            displayFormats: {
+                                day: 'MMM DD'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Humidity (%)'
+                        },
+                        min: 0,
+                        max: 100
+                    }
+                }
+            }
+        });
+
+        var ctx2 = document.getElementById('temperatureHistoricalChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'line',
+            data: {
+                labels: temperatureTimestamps,
+                datasets: [{
+                    label: 'Temperature',
+                    data: temperatureValues,
+                    borderColor: 'red',
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            tooltipFormat: 'll',
+                            displayFormats: {
+                                day: 'MMM DD'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)'
+                        },
+                        min: -10,
+                        max: 50
+                    }
+                }
+            }
+        });
+
+        var ctx3 = document.getElementById('moistureHistoricalChart').getContext('2d');
+        new Chart(ctx3, {
+            type: 'line',
+            data: {
+                labels: moistureTimestamps,
+                datasets: [{
+                    label: 'Moisture',
+                    data: moistureValues,
+                    borderColor: 'green',
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            tooltipFormat: 'll',
+                            displayFormats: {
+                                day: 'MMM DD'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Moisture (%)'
+                        },
+                        min: 0,
+                        max: 100
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
